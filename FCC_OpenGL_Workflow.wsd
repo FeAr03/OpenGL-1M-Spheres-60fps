@@ -1,0 +1,132 @@
+// FCC_OpenGL Project Workflow & Class Relationships
+// PlantUML .wsd file for rendering pipeline, class relationships, and file interactions
+@startuml
+skinparam backgroundColor #232B32
+skinparam classBackgroundColor #2D3A45
+skinparam classBorderColor #B0C4DE
+skinparam classFontColor #E0E6ED
+skinparam ArrowColor #B0C4DE
+skinparam noteBackgroundColor #232B32
+skinparam noteBorderColor #B0C4DE
+skinparam noteFontColor #E0E6ED
+skinparam shadowing false
+
+package "Main Application" {
+  class "main.cpp" as Main {
+    +main()
+    - Generates sphere mesh
+    - Generates random positions
+    - Sets up instanced rendering
+    - Main render loop
+  }
+}
+
+package "Rendering Abstractions" {
+  class "VAO" {
+    +Bind()
+    +Unbind()
+    +Delete()
+    +LinkAttrib(...)
+  }
+  class "VBO" {
+    +Bind()
+    +Unbind()
+    +Delete()
+  }
+  class "EBO" {
+    +Bind()
+    +Unbind()
+    +Delete()
+  }
+  class "shaderClass" as Shader {
+    +Activate()
+    +Delete()
+    +ID
+  }
+  class "Texture" {
+    +texUnit(...)
+    +Bind()
+    +Delete()
+  }
+}
+
+package "Camera" {
+  class "Camera" {
+    +Inputs(GLFWwindow*)
+    +updateMatrix(...)
+    +Matrix(Shader, ...)
+    +Position
+  }
+}
+
+package "GLM" {
+  class "glm::mat4"
+  class "glm::vec3"
+  class "glm::vec4"
+}
+
+package "Shaders" {
+  class "default.vert" as VertexShader
+  class "default.frag" as FragmentShader
+  class "light.vert"
+  class "light.frag"
+}
+
+' Relationships
+Main --> VAO : Uses for mesh & instancing
+Main --> VBO : Uses for mesh & instance data
+Main --> EBO : Uses for mesh indices
+Main --> Shader : Loads and uses for rendering
+Main --> Texture : (Commented out for perf)
+Main --> Camera : Handles view/projection
+Main --> "glm::mat4" : For model matrices
+Main --> "glm::vec3" : For positions/colors
+Main --> VertexShader : Loads for sphere rendering
+Main --> FragmentShader : Loads for sphere rendering
+
+' Instanced Rendering Workflow
+Main -[#blue]-> "VBO" : Uploads sphere mesh
+Main -[#blue]-> "VBO" : Uploads model matrices (instance VBO)
+Main -[#blue]-> "VAO" : Sets up attributes (0-3: mesh, 4-7: model matrix)
+Main -[#blue]-> "glDrawElementsInstanced" : Draws all spheres in one call
+
+' Camera/Shader interaction
+Camera --> Shader : Passes camMatrix uniform
+Main --> Camera : Handles input, updates matrix
+
+' Shader files
+Shader --> VertexShader : Loads/compiles
+Shader --> FragmentShader : Loads/compiles
+
+' Light rendering
+Main --> "light.vert"
+Main --> "light.frag"
+Main --> VAO : For light cube
+Main --> VBO : For light cube
+Main --> EBO : For light cube
+
+' Notes
+note right of Main
+- Generates sphere mesh (vertices, indices)
+- Generates N random positions
+- For each position, creates a model matrix
+- Uploads all model matrices to instance VBO
+- Sets up VAO with mesh + instanced attributes
+- In render loop:
+  - Handles camera input
+  - Updates camera matrix
+  - Binds shader, VAO
+  - Calls glDrawElementsInstanced
+end note
+
+note right of VertexShader
+- Receives per-vertex and per-instance (model) data
+- Applies model, view, projection transforms
+end note
+
+note right of FragmentShader
+- Uses vertex color for output
+- No texture sampling (for perf)
+end note
+
+@enduml
