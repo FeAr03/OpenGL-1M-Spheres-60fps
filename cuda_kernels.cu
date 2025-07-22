@@ -1,23 +1,8 @@
 #include <cuda_runtime.h>
-#include <cuda_gl_interop.h>
+//#include <cuda_gl_interop.h>
 #include <math.h>
 #include <stdio.h>
-//#include <device_launch_parameters.h>
-
-extern "C" __global__ void addOneKernel(float* data, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        data[idx] += 1.0f;
-    }
-}
-
-// Example host function to launch the kernel
-extern "C" void launchAddOneKernel(float* d_data, int n) {
-    int blockSize = 256;
-    int numBlocks = (n + blockSize - 1) / blockSize;
-    addOneKernel<<<numBlocks, blockSize>>>(d_data, n);
-    cudaDeviceSynchronize();
-}
+#include <device_launch_parameters.h>
 
 // Kernel to animate sphere positions
 extern "C" __global__ void animateSpheresKernel(float* data, int n, float time) {

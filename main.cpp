@@ -4,7 +4,7 @@ extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
 #include<glad/glad.h>
 #include <algorithm>
 #include <cuda_runtime.h>
-#include <cuda_gl_interop.h>
+//#include <cuda_gl_interop.h>
 #include<iostream>
 #include<GLFW/glfw3.h>
 #include<stb/stb_image.h>
@@ -26,6 +26,7 @@ extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
 #include"EBO.h"
 #include"Camera.h"
 #include "FrustumCulling.h"
+#include <cuda_gl_interop.h>
 
 using namespace std;
 
@@ -47,9 +48,9 @@ int getGridIndex(int x, int y, int z) {
 void assignSpheresToGrid(const std::vector<glm::vec3>& spherePositions) {
 	for (int i = 0; i < spherePositions.size(); ++i) {
 		glm::vec3 p = spherePositions[i];
-		int gx = std::clamp(int((p.x - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
-		int gy = std::clamp(int((p.y - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
-		int gz = std::clamp(int((p.z - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
+		int gx = (int((p.x - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
+		int gy = (int((p.y - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
+		int gz = (int((p.z - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
 		gridCells[getGridIndex(gx, gy, gz)].sphereIndices.push_back(i);
 	}
 }

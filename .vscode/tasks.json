@@ -36,14 +36,16 @@
           "cuda_app.exe",
           "-I${workspaceFolder}",
           "-I${workspaceFolder}/Libraries/include",
-          "-L\"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/lib/x64\"",
+          "-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/include",
+          "-LC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/lib/x64",
+          "-L${workspaceFolder}/Libraries/lib",
           "-lglfw3",
           "-lopengl32",
           "-lgdi32",
           "-luser32",
           "-lkernel32",
-          "-lcuda",
-          "-lcuda_gl_interop"
+          "-lcudart",
+          "-Xlinker"
         ],
         "group": {
           "kind": "build",

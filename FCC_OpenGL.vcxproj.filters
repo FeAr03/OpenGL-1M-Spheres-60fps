@@ -65,9 +65,6 @@
     <None Include="light.vert">
       <Filter>Resource Files\Shaders</Filter>
     </None>
-    <None Include="cuda_kernels.cu">
-      <Filter>Source Files</Filter>
-    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="shaderClass.h">
@@ -114,5 +111,10 @@
     <Image Include="Obama_1024.png">
       <Filter>Resource Files\Textures</Filter>
     </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="cuda_kernels.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>
