@@ -28,7 +28,6 @@ extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
 #include "FrustumCulling.h"
 #include <cuda_gl_interop.h>
 
-using namespace std;
 
 // --- Spatial Grid Structures ---
 struct GridCell {
