@@ -4,7 +4,6 @@ extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
 #include<glad/glad.h>
 #include <algorithm>
 #include <cuda_runtime.h>
-//#include <cuda_gl_interop.h>
 #include<iostream>
 #include<GLFW/glfw3.h>
 #include<stb/stb_image.h>
@@ -14,7 +13,7 @@ extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
 #include<cstdlib>
 #include<ctime>
 #include<vector>
-#include<math.h>
+#include <math.h>
 #include <chrono>
 #include <thread>
 #include <array>
@@ -28,13 +27,14 @@ extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
 #include "FrustumCulling.h"
 #include <cuda_gl_interop.h>
 
+using namespace std;
 
-// --- Spatial Grid Structures ---
+// Spatial grid for partitioning spheres
 struct GridCell {
 	std::vector<int> sphereIndices;
 };
 
-const int GRID_SIZE = 16; // Number of cells per axis
+const int GRID_SIZE = 16; // Number of grid cells per axis
 const float GRID_WORLD_MIN = -150.0f;
 const float GRID_WORLD_MAX = 150.0f;
 const float GRID_CELL_SIZE = (GRID_WORLD_MAX - GRID_WORLD_MIN) / GRID_SIZE;
@@ -47,9 +47,9 @@ int getGridIndex(int x, int y, int z) {
 void assignSpheresToGrid(const std::vector<glm::vec3>& spherePositions) {
 	for (int i = 0; i < spherePositions.size(); ++i) {
 		glm::vec3 p = spherePositions[i];
-		int gx = (int((p.x - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
-		int gy = (int((p.y - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
-		int gz = (int((p.z - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
+		int gx = std::clamp(int((p.x - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
+		int gy = std::clamp(int((p.y - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
+		int gz = std::clamp(int((p.z - GRID_WORLD_MIN) / GRID_CELL_SIZE), 0, GRID_SIZE - 1);
 		gridCells[getGridIndex(gx, gy, gz)].sphereIndices.push_back(i);
 	}
 }
@@ -95,39 +95,34 @@ int main()
 	// Initialize GLFW
 	glfwInit();
 
-	// Tell GLFW what version of OpenGL we are using 
-	// In this case we are using OpenGL 3.3
+// Set OpenGL version to 3.3
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	// Tell GLFW we are using the CORE profile
-	// So that means we only have the modern functions
+// Use the OpenGL core profile (modern functions only)
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	// Create a GLFWwindow object of 800 by 800 pixels, naming it "YoutubeOpenGL"
+// Create a GLFW window
 	GLFWwindow* window = glfwCreateWindow(width, height, "YoutubeOpenGL", NULL, NULL);
-	// Error check if the window fails to create
+// Check for window creation failure
 	if (window == NULL)
 	{
 		std::cout << "Failed to create GLFW window" << std::endl;
 		glfwTerminate();
 		return -1;
 	}
-	// Introduce the window into the current context
+// Make the window's context current
 	glfwMakeContextCurrent(window);
 
-	//Load GLAD so it configures OpenGL
+// Load GLAD to configure OpenGL
 	gladLoadGL();
-	// Specify the viewport of OpenGL in the Window
-	// In this case the viewport goes from x = 0, y = 0, to x = 800, y = 800
+// Set OpenGL viewport to window size
 	glViewport(0, 0, width, height);
 
 
-	// Generates Shader object using shaders default.vert and default.frag
+// Create shader program
 	Shader shaderProgram("default.vert", "default.frag");
 								
-	// --- Sphere mesh generation: only generate one sphere mesh ---
-	// This creates the geometry for a single sphere, which will be reused for all 1000 spheres
-	// The Vertex struct is defined above
+// Sphere mesh generation (single mesh reused for all instances)
 	struct Vertex {
 		glm::vec3 position;
 		glm::vec3 color;
@@ -149,19 +144,19 @@ int main()
 	int lodSectors[3] = {36, 15, 7};
 	int lodStacks[3] = {36, 15, 7};
 
-	// --- Generate random positions for spheres (instance data) ---
+// Generate random positions for all spheres
 	std::vector<glm::vec3> spherePositions;
-	int numSpheres = 1000000; // You can adjust this for performance
+	int numSpheres = 2000000; // You can adjust this for performance
 	for (int i = 0; i < numSpheres; ++i) {
-		float x = static_cast<float>((rand() % 300 - 150));
-		float y = static_cast<float>((rand() % 300 - 150));
-		float z = static_cast<float>((rand() % 300 - 150));
+		float x = static_cast<float>((rand() % 250 - 25));
+		float y = static_cast<float>((rand() % 250 - 25));
+		float z = static_cast<float>((rand() % 250 - 25));
 		spherePositions.push_back(glm::vec3(x, y, z));
 	}
-	// --- Assign spheres to grid cells (spatial partitioning) ---
+// Assign spheres to spatial grid cells
 	assignSpheresToGrid(spherePositions);
 
-	// --- Set up instance VBO for sphere positions (vec3) BEFORE LOD mesh setup ---
+// Set up instance VBO for sphere positions (before LOD mesh setup)
 	GLuint instanceVBO;
 	glGenBuffers(1, &instanceVBO);
 	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
@@ -251,22 +246,22 @@ int main()
 		lodMeshes[lod].ebo.Unbind();
 	}
 
-	// Register instanceVBO with CUDA (once, after OpenGL context is created)
+// Register instanceVBO with CUDA (after OpenGL context is created)
 	cudaGraphicsGLRegisterBuffer(&cudaVBO, instanceVBO, cudaGraphicsMapFlagsWriteDiscard);
 	
 
-	// Shader for light cube
+// Light cube shader and geometry
 	Shader lightShader("light.vert", "light.frag");
-	// Generates Vertex Array Object and binds it
+// Create and bind VAO for light
 	VAO lightVAO;
 	lightVAO.Bind();
-	// Generates Vertex Buffer Object and links it to vertices
+// Create VBO for light vertices
 	VBO lightVBO(lightVertices, sizeof(lightVertices));
-	// Generates Element Buffer Object and links it to indices
+// Create EBO for light indices
 	EBO lightEBO(lightIndices, sizeof(lightIndices));
-	// Links VBO attributes such as coordinates and colors to VAO
+// Link VBO attributes to VAO
 	lightVAO.LinkAttrib(lightVBO, 0, 3, GL_FLOAT, 3 * sizeof(float), (void*)0);
-	// Unbind all to prevent accidentally modifying them
+// Unbind VAO, VBO, and EBO
 	lightVAO.Unbind();
 	lightVBO.Unbind();
 	lightEBO.Unbind();
@@ -274,16 +269,15 @@ int main()
 
 
 	glm::vec4 lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	// Move the light to the center
+// Set light position and model matrix
 	glm::vec3 lightPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	glm::mat4 lightModel = glm::mat4(1.0f);
 	lightModel = glm::translate(lightModel, lightPos);
 
 
-	/*Texture brickTex("brick.png", GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE);
-	brickTex.texUnit(shaderProgram, "tex0", 0);*/
+// (Optional) Example for loading a different texture
 
-	// Original code from the tutorial
+// Load main texture
 	Texture brickTex("obama_512.png", GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE);
 	brickTex.Bind();
 	brickTex.texUnit(shaderProgram, "tex0", 0);
@@ -291,10 +285,10 @@ int main()
 
 
 
-	// Enables the Depth Buffer
+// Enable depth testing
 	glEnable(GL_DEPTH_TEST);
 
-	// Creates camera object
+// Create camera object
 	Camera camera(width, height, glm::vec3(0.0f, 0.0f, 2.0f));
 
 
@@ -302,7 +296,7 @@ int main()
 	double crntTime = 0.0;
 	double timeDiff = 0.0;
 	unsigned int counter = 0;
-	// Main while loop
+// Main render loop
 	while (!glfwWindowShouldClose(window))
 	{
 		crntTime = glfwGetTime();
@@ -320,26 +314,26 @@ int main()
 			prevTime = crntTime;
 			counter = 0;
 		}
-		// Specify the color of the background
+// Set background color
 		glClearColor(0.07f, 0.13f, 0.17f, 1.0f);
-		// Clean the back buffer and depth buffer
+// Clear color and depth buffers
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// Handles camera inputs
+// Handle camera input
 		camera.Inputs(window);
-		// Updates and exports the camera matrix to the Vertex Shader
+// Update and send camera matrix to vertex shader
 		camera.updateMatrix(45.0f, 1.0f, 100.0f);
 
-		// --- CUDA: Map instanceVBO and update instance data on GPU ---
+// CUDA: Map instanceVBO and update instance data on GPU
 		cudaGraphicsMapResources(1, &cudaVBO, 0);
 		size_t num_bytes;
 		glm::vec3* d_instanceData;
 		cudaGraphicsResourceGetMappedPointer((void**)&d_instanceData, &num_bytes, cudaVBO);
-		// Animate sphere positions on GPU using CUDA kernel
+// Animate sphere positions on GPU using CUDA kernel
 		launchAnimateSpheresKernel((float*)d_instanceData, numSpheres, (float)crntTime);
 		cudaGraphicsUnmapResources(1, &cudaVBO, 0);
 
-		// --- Frustum culling: build visible sphere list for each LOD (CPU fallback, still needed for now) ---
+// Frustum culling: build visible sphere list for each LOD (CPU fallback)
 		glm::mat4 view = camera.getViewMatrix();
 		glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / height, 1.0f, 100.0f);
 		std::array<FrustumPlane, 6> frustum;
@@ -347,7 +341,7 @@ int main()
 		std::vector<glm::vec3> lodVisiblePositions[3];
 		float lodRadii[3] = {0.5f, 0.25f, 0.125f}; // Use correct radii if LODs differ in size
 		for (int lod = 0; lod < 3; ++lod) lodVisiblePositions[lod].reserve(numSpheres);
-		// --- Spatial grid culling ---
+// Spatial grid culling
 		for (int gx = 0; gx < GRID_SIZE; ++gx) {
 			for (int gy = 0; gy < GRID_SIZE; ++gy) {
 				for (int gz = 0; gz < GRID_SIZE; ++gz) {
@@ -373,12 +367,12 @@ int main()
 				}
 			}
 		}
-		// --- Debug: Print number of visible spheres per LOD ---
+// Debug: Print number of visible spheres per LOD (disabled)
 		static int frameCount = 0;
 		/*if (frameCount++ % 60 == 0) {
 			printf("Visible LOD0: %zu, LOD1: %zu, LOD2: %zu\n", lodVisiblePositions[0].size(), lodVisiblePositions[1].size(), lodVisiblePositions[2].size());
 		}*/
-		// --- Render all LODs efficiently ---
+// Render all LODs efficiently
 		shaderProgram.Activate();
 		camera.Matrix(shaderProgram, "camMatrix");
 		glUniform1f(glGetUniformLocation(shaderProgram.ID, "uTime"), 0.0f);
@@ -389,9 +383,9 @@ int main()
 		for (int lod = 0; lod <= 2; lod++) {
 			int numVisible = static_cast<int>(lodVisiblePositions[lod].size());
 			if (numVisible > 0) {
-				glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-				glBufferData(GL_ARRAY_BUFFER, numVisible * sizeof(glm::vec3), lodVisiblePositions[lod].data(), GL_DYNAMIC_DRAW);
-				glBindBuffer(GL_ARRAY_BUFFER, 0);
+				// glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+				// glBufferData(GL_ARRAY_BUFFER, numVisible * sizeof(glm::vec3), lodVisiblePositions[lod].data(), GL_DYNAMIC_DRAW);
+				// glBindBuffer(GL_ARRAY_BUFFER, 0);
 				lodMeshes[lod].vao.Bind();
 				glDrawElementsInstanced(
 					GL_TRIANGLES,
@@ -404,21 +398,14 @@ int main()
 			}
 		}
 		brickTex.Unbind();
-		// --- Light rendering (unchanged) ---
+// Render light cube
 		lightShader.Activate();
 		camera.Matrix(lightShader, "camMatrix");
 		lightVAO.Bind();
 		glDrawElements(GL_TRIANGLES, sizeof(lightIndices) / sizeof(int), GL_UNSIGNED_INT, 0);
 		lightVAO.Unbind();
 
-		// --- Animate the light source (cube) in a circle ---
-		// float lightAngle = static_cast<float>(glfwGetTime()) * 0.5f; // Light rotation speed
-		// float lightRadius = 2.0f; // Distance from center
-		// lightPos = glm::vec3(
-		//     cos(lightAngle) * lightRadius,
-		//     0.0f,
-		//     sin(lightAngle) * lightRadius
-		// );
+// Animate the light source (cube) in a circle (optional)
 		lightPos = glm::vec3(0.0f, 0.0f, 0.0f); // Fixed position
 		lightModel = glm::mat4(1.0f);
 		lightModel = glm::translate(lightModel, lightPos);
@@ -429,9 +416,9 @@ int main()
 		glUniform4f(glGetUniformLocation(shaderProgram.ID, "lightColor"), lightColor.x, lightColor.y, lightColor.z, lightColor.w);
 		glUniform3f(glGetUniformLocation(shaderProgram.ID, "lightPos"), lightPos.x, lightPos.y, lightPos.z);
 
-		// Swap the back buffer with the front buffer
+// Swap buffers
 		glfwSwapBuffers(window);
-		// Take care of all GLFW events
+// Poll GLFW events
 		glfwPollEvents();
 	}
 
@@ -440,9 +427,9 @@ int main()
 	lightVBO.Delete();
 	lightEBO.Delete();
 	lightShader.Delete();
-	// Delete window before ending the program
+// Delete window before exiting
 	glfwDestroyWindow(window);
-	// Terminate GLFW before ending the program
+// Terminate GLFW before exiting
 	glfwTerminate();
 	return 0;
 }
