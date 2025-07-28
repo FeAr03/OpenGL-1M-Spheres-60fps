@@ -13,7 +13,7 @@ extern "C" __global__ void animateSpheresKernel(float* data, int n, float time) 
         float y = data[3 * idx + 1];
         float z = data[3 * idx + 2];
         data[3 * idx + 0] = x + 0.10f * cosf(time + idx); // Increased offset
-        data[3 * idx + 1] = y + 0.10f * sinf(time + idx);
+        data[3 * idx + 1] = y + 0.10f * tan(time + idx);
         data[3 * idx + 2] = z;
     }
 }

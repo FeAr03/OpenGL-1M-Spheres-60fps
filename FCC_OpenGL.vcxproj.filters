@@ -116,5 +116,11 @@
     <CudaCompile Include="cuda_kernels.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
+    <CudaCompile Include="FrustumCullingCUDA.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="FrustumCullingCUDA_Scan.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>

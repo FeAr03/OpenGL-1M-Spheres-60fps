@@ -1,6 +1,3 @@
-#ifdef __cplusplus
-extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
-#endif
 #include<glad/glad.h>
 #include <algorithm>
 #include <cuda_runtime.h>
@@ -26,6 +23,17 @@ extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
 #include"Camera.h"
 #include "FrustumCulling.h"
 #include <cuda_gl_interop.h>
+
+#ifdef __cplusplus
+extern "C" void launchAnimateSpheresKernel(float* d_data, int n, float time);
+extern "C" void launchFrustumCullingScan(
+	const float* d_spherePositions, int numSpheres,
+	const float* d_frustumPlanes, const float* d_cameraPos, const float* d_lodRadii,
+	float* d_lod0Out, int* lod0Count,
+	float* d_lod1Out, int* lod1Count,
+	float* d_lod2Out, int* lod2Count,
+	cudaStream_t stream = 0);
+#endif
 
 using namespace std;
 
@@ -146,7 +154,7 @@ int main()
 
 // Generate random positions for all spheres
 	std::vector<glm::vec3> spherePositions;
-	int numSpheres = 2000000; // You can adjust this for performance
+	int numSpheres = 1000000; // You can adjust this for performance
 	for (int i = 0; i < numSpheres; ++i) {
 		float x = static_cast<float>((rand() % 250 - 25));
 		float y = static_cast<float>((rand() % 250 - 25));
@@ -333,40 +341,65 @@ int main()
 		launchAnimateSpheresKernel((float*)d_instanceData, numSpheres, (float)crntTime);
 		cudaGraphicsUnmapResources(1, &cudaVBO, 0);
 
-// Frustum culling: build visible sphere list for each LOD (CPU fallback)
-		glm::mat4 view = camera.getViewMatrix();
-		glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / height, 1.0f, 100.0f);
-		std::array<FrustumPlane, 6> frustum;
-		ExtractFrustumPlanes(proj * view, frustum);
-		std::vector<glm::vec3> lodVisiblePositions[3];
-		float lodRadii[3] = {0.5f, 0.25f, 0.125f}; // Use correct radii if LODs differ in size
-		for (int lod = 0; lod < 3; ++lod) lodVisiblePositions[lod].reserve(numSpheres);
-// Spatial grid culling
-		for (int gx = 0; gx < GRID_SIZE; ++gx) {
-			for (int gy = 0; gy < GRID_SIZE; ++gy) {
-				for (int gz = 0; gz < GRID_SIZE; ++gz) {
-					glm::vec3 cellCenter = glm::vec3(
-						GRID_WORLD_MIN + (gx + 0.5f) * GRID_CELL_SIZE,
-						GRID_WORLD_MIN + (gy + 0.5f) * GRID_CELL_SIZE,
-						GRID_WORLD_MIN + (gz + 0.5f) * GRID_CELL_SIZE
-					);
-					float cellRadius = sqrtf(3.0f) * GRID_CELL_SIZE * 0.5f;
-					if (SphereInFrustum(frustum, cellCenter, cellRadius)) {
-						const auto& indices = gridCells[getGridIndex(gx, gy, gz)].sphereIndices;
-						for (int idx : indices) {
-							const glm::vec3& pos = spherePositions[idx];
-							float dist = glm::length(camera.Position - pos);
-							int lod = 2;
-							if (dist < 50.0f) lod = 0;
-							else if (dist < 100.0f) lod = 1;
-							if (SphereInFrustum(frustum, pos, lodRadii[lod])) {
-								lodVisiblePositions[lod].push_back(pos);
-							}
-						}
-					}
-				}
-			}
-		}
+// Frustum culling and LOD selection using CUDA scan-based compaction (no atomics)
+			   glm::mat4 view = camera.getViewMatrix();
+			   glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / height, 1.0f, 150.0f);
+			   std::array<FrustumPlane, 6> frustum;
+			   ExtractFrustumPlanes(proj * view, frustum);
+			   float lodRadii[3] = {0.5f, 0.25f, 0.125f};
+			   // Prepare device memory for frustum planes, camera, LOD radii
+			   float h_frustumPlanes[6*4];
+			   for (int i = 0; i < 6; ++i) {
+				   h_frustumPlanes[i*4+0] = frustum[i].eq.x;
+				   h_frustumPlanes[i*4+1] = frustum[i].eq.y;
+				   h_frustumPlanes[i*4+2] = frustum[i].eq.z;
+				   h_frustumPlanes[i*4+3] = frustum[i].eq.w;
+			   }
+			   float* d_frustumPlanes = nullptr;
+			   cudaMalloc(&d_frustumPlanes, 6*4*sizeof(float));
+			   cudaMemcpy(d_frustumPlanes, h_frustumPlanes, 6*4*sizeof(float), cudaMemcpyHostToDevice);
+			   float h_camPos[3] = {camera.Position.x, camera.Position.y, camera.Position.z};
+			   float* d_camPos = nullptr;
+			   cudaMalloc(&d_camPos, 3*sizeof(float));
+			   cudaMemcpy(d_camPos, h_camPos, 3*sizeof(float), cudaMemcpyHostToDevice);
+			   float* d_lodRadii = nullptr;
+			   cudaMalloc(&d_lodRadii, 3*sizeof(float));
+			   cudaMemcpy(d_lodRadii, lodRadii, 3*sizeof(float), cudaMemcpyHostToDevice);
+			   // Prepare output buffers
+			   static float* d_lodOut[3] = {nullptr, nullptr, nullptr};
+			   static int maxSpheres = 0;
+			   if (maxSpheres != numSpheres) {
+				   for (int i = 0; i < 3; ++i) {
+					   if (d_lodOut[i]) cudaFree(d_lodOut[i]);
+					   cudaMalloc(&d_lodOut[i], numSpheres * 3 * sizeof(float));
+				   }
+				   maxSpheres = numSpheres;
+			   }
+			   int lodCounts[3] = {0, 0, 0};
+			   // Call scan-based culling kernel
+			   extern void launchFrustumCullingScan(
+				   const float* d_spherePositions, int numSpheres,
+				   const float* d_frustumPlanes, const float* d_cameraPos, const float* d_lodRadii,
+				   float* d_lod0Out, int* lod0Count,
+				   float* d_lod1Out, int* lod1Count,
+				   float* d_lod2Out, int* lod2Count,
+				   cudaStream_t stream);
+			   launchFrustumCullingScan(
+				   (const float*)d_instanceData, numSpheres,
+				   d_frustumPlanes, d_camPos, d_lodRadii,
+				   d_lodOut[0], &lodCounts[0],
+				   d_lodOut[1], &lodCounts[1],
+				   d_lodOut[2], &lodCounts[2],
+				   0);
+			   // Copy visible positions back to host for rendering
+			   std::vector<glm::vec3> lodVisiblePositions[3];
+			   for (int i = 0; i < 3; ++i) {
+				   lodVisiblePositions[i].resize(lodCounts[i]);
+				   cudaMemcpy(lodVisiblePositions[i].data(), d_lodOut[i], lodCounts[i]*sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+			   }
+			   cudaFree(d_frustumPlanes);
+			   cudaFree(d_camPos);
+			   cudaFree(d_lodRadii);
 // Debug: Print number of visible spheres per LOD (disabled)
 		static int frameCount = 0;
 		/*if (frameCount++ % 60 == 0) {
